@@ -1,0 +1,265 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Housie Live Demo</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,sans-serif;background:#0b1020;color:white}
+header{padding:18px;background:#151e34;border-bottom:1px solid #303b56;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+h1{font-size:23px;margin:0;color:#9b8cff}
+button{border:0;border-radius:8px;padding:11px 14px;font-weight:bold;cursor:pointer;margin:3px}
+.primary{background:#7867ff;color:white}
+.secondary{background:#293650;color:white}
+.wrap{max-width:1100px;margin:auto;padding:18px}
+.panel{background:#151e34;border:1px solid #303b56;border-radius:14px;padding:17px;margin-bottom:17px}
+h2{font-size:18px;margin-top:0}
+.current{display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin:20px 0}
+.ball{height:100px;width:100px;border-radius:50%;background:linear-gradient(135deg,#a79bff,#5e4ce0);display:grid;place-items:center;font-size:40px;font-weight:bold}
+.board{display:grid;grid-template-columns:repeat(10,1fr);gap:5px}
+.num{background:#202c45;border:1px solid #34415f;border-radius:6px;aspect-ratio:1;display:grid;place-items:center;font-size:13px;font-weight:bold}
+.num.called{background:#594bd0;color:white}
+.num.latest{background:#4de1d2;color:#10202a}
+.ticket{display:grid;grid-template-columns:repeat(9,1fr);gap:4px;background:#e6ecf7;padding:5px;border-radius:7px}
+.cell{aspect-ratio:1;background:white;color:#18233a;display:grid;place-items:center;font-weight:bold;border-radius:3px;font-size:13px}
+.cell.blank{background:#cbd5e1}
+.cell.marked{background:#7162ee;color:white}
+.prize{padding:11px 0;border-bottom:1px solid #303b56;font-size:14px}
+.ok{color:#4de1a5;font-weight:bold}
+#history{display:flex;gap:6px;flex-wrap:wrap}
+.historyball{background:#293650;border-radius:50%;width:34px;height:34px;display:grid;place-items:center;font-weight:bold}
+small{color:#a4b0c8}
+@media(max-width:500px){.board{grid-template-columns:repeat(9,1fr)}.num{font-size:11px}.ball{width:80px;height:80px;font-size:32px}.wrap{padding:10px}.panel{padding:12px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>🎱 HOUSIE LIVE</h1>
+  <span>DEMO GAME</span>
+</header>
+
+<main class="wrap">
+  <section class="panel">
+    <h2>Number Caller</h2>
+    <div class="current">
+      <div class="ball" id="current">—</div>
+      <div>
+        <h2 id="status">Ready to play</h2>
+        <small id="count">0 / 90 numbers called</small>
+      </div>
+    </div>
+    <button class="primary" id="next">Call Next Number</button>
+    <button class="secondary" id="auto">▶ Auto Call</button>
+    <button class="secondary" id="undo">Undo</button>
+    <button class="secondary" id="reset">Reset Game</button>
+    <div class="board" id="board"></div>
+    <h2 style="margin-top:22px">Called Numbers</h2>
+    <div id="history"></div>
+  </section>
+
+  <section class="panel">
+    <h2>🎟️ Housie Ticket</h2>
+    <p id="ticketName">Ticket #001 · 15 numbers</p>
+    <div class="ticket" id="ticket"></div>
+    <button class="primary" id="newTicket">Generate New Ticket</button>
+    <button class="secondary" id="mark">Mark Called Numbers</button>
+  </section>
+
+  <section class="panel">
+    <h2>🏆 Winning Patterns</h2>
+    <div class="prize">Early Five: <span id="early">Pending</span></div>
+    <div class="prize">Top Row: <span id="top">Pending</span></div>
+    <div class="prize">Middle Row: <span id="middle">Pending</span></div>
+    <div class="prize">Bottom Row: <span id="bottom">Pending</span></div>
+    <div class="prize">Full House: <span id="full">Pending</span></div>
+  </section>
+
+  <p><small>Demo only. Game data stays in this browser. Live multiplayer and online ticket booking are not connected.</small></p>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let called = [];
+let ticket = [];
+let ticketNumber = 1;
+let timer = null;
+
+function shuffle(arr){
+  arr = [...arr];
+  for(let i=arr.length-1;i>0;i--){
+    const j=Math.floor(Math.random()*(i+1));
+    [arr[i],arr[j]]=[arr[j],arr[i]];
+  }
+  return arr;
+}
+
+function makeTicket(){
+  let nums = [];
+  for(let c=0;c<9;c++){
+    let start = c===0 ? 1 : c*10;
+    let end = c===8 ? 90 : c*10+9;
+    nums.push(shuffle(Array.from({length:end-start+1},(_,i)=>start+i)));
+  }
+
+  let grid = Array.from({length:3},()=>Array(9).fill(null));
+  let positions = shuffle(Array.from({length:27},(_,i)=>i));
+  let rows = [0,0,0], cols = Array(9).fill(0);
+  let chosen = [];
+
+  // Give each row five numbers, for 15 in total.
+  for(let r=0;r<3;r++){
+    let cs = shuffle([0,1,2,3,4,5,6,7,8]).slice(0,5);
+    cs.forEach(c=>chosen.push({r,c}));
+  }
+
+  // Avoid duplicate columns by repairing conflicting choices.
+  let usedCols = new Set();
+  chosen.forEach(p=>{
+    if(!usedCols.has(p.c)){
+      usedCols.add(p.c);
+      grid[p.r][p.c]=nums[p.c].pop();
+      rows[p.r]++;
+    }
+  });
+
+  // Fill empty cells until each row has five numbers.
+  for(let r=0;r<3;r++){
+    while(rows[r]<5){
+      let available = shuffle([0,1,2,3,4,5,6,7,8])
+        .filter(c=>grid[r][c]===null && !grid.some(row=>row[c]!==null));
+      if(!available.length){
+        available=shuffle([0,1,2,3,4,5,6,7,8])
+          .filter(c=>grid[r][c]===null);
+      }
+      const c=available[0];
+      grid[r][c]=nums[c].pop();
+      rows[r]++;
+    }
+  }
+
+  // Sort each column from top to bottom.
+  for(let c=0;c<9;c++){
+    let vals=grid.map(row=>row[c]).filter(n=>n!==null).sort((a,b)=>a-b);
+    let i=0;
+    for(let r=0;r<3;r++) if(grid[r][c]!==null) grid[r][c]=vals[i++];
+  }
+
+  ticket=grid;
+  ticketNumber++;
+  renderTicket();
+}
+
+function renderTicket(){
+  $("ticketName").textContent =
+    `Ticket #${String(ticketNumber).padStart(3,"0")} · 15 numbers`;
+  $("ticket").innerHTML="";
+  ticket.flat().forEach(n=>{
+    const el=document.createElement("div");
+    el.className="cell"+(n===null?" blank":"")+
+      (n!==null&&called.includes(n)?" marked":"");
+    el.textContent=n??"";
+    $("ticket").appendChild(el);
+  });
+  checkPrizes();
+}
+
+function renderBoard(){
+  $("board").innerHTML="";
+  for(let n=1;n<=90;n++){
+    const el=document.createElement("div");
+    el.className="num"+(called.includes(n)?" called":"")+
+      (called[0]===n?" latest":"");
+    el.textContent=n;
+    $("board").appendChild(el);
+  }
+
+  $("current").textContent=called[0]??"—";
+  $("status").textContent=called.length
+    ? "Number "+called[0]+" called":"Ready to play";
+  $("count").textContent=called.length+" / 90 numbers called";
+
+  $("history").innerHTML="";
+  called.forEach(n=>{
+    const el=document.createElement("div");
+    el.className="historyball";
+    el.textContent=n;
+    $("history").appendChild(el);
+  });
+  renderTicket();
+}
+
+function nextNumber(){
+  if(called.length===90){
+    stopAuto();
+    alert("All 90 numbers have been called!");
+    return;
+  }
+  const remaining=Array.from({length:90},(_,i)=>i+1)
+    .filter(n=>!called.includes(n));
+  const n=remaining[Math.floor(Math.random()*remaining.length)];
+  called.unshift(n);
+  renderBoard();
+
+  if("speechSynthesis" in window){
+    // Voice is optional; enable browser speech on demand.
+    if(window.voiceEnabled){
+      speechSynthesis.cancel();
+      speechSynthesis.speak(new SpeechSynthesisUtterance("Number "+n));
+    }
+  }
+}
+
+function stopAuto(){
+  if(timer) clearInterval(timer);
+  timer=null;
+  $("auto").textContent="▶ Auto Call";
+}
+
+function checkPrizes(){
+  const rows=ticket.map(row=>row.filter(n=>n!==null));
+  const nums=ticket.flat().filter(n=>n!==null);
+  const marked=nums.filter(n=>called.includes(n)).length;
+
+  const wins={
+    early:marked>=5,
+    top:rows[0]?.length===5&&rows[0].every(n=>called.includes(n)),
+    middle:rows[1]?.length===5&&rows[1].every(n=>called.includes(n)),
+    bottom:rows[2]?.length===5&&rows[2].every(n=>called.includes(n)),
+    full:nums.length===15&&marked===15
+  };
+
+  Object.keys(wins).forEach(k=>{
+    $(k).textContent=wins[k]?"Completed":"Pending";
+    $(k).className=wins[k]?"ok":"";
+  });
+}
+
+$("next").onclick=nextNumber;
+$("auto").onclick=()=>{
+  if(timer){stopAuto();return;}
+  $("auto").textContent="Ⅱ Stop Auto";
+  nextNumber();
+  timer=setInterval(nextNumber,5000);
+};
+$("undo").onclick=()=>{
+  stopAuto();
+  called.shift();
+  renderBoard();
+};
+$("reset").onclick=()=>{
+  stopAuto();
+  called=[];
+  renderBoard();
+};
+$("newTicket").onclick=makeTicket;
+$("mark").onclick=renderTicket;
+
+makeTicket();
+ticketNumber=1;
+renderBoard();
+</script>
+</body>
+  </html>
+  
